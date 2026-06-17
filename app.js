@@ -1,13 +1,13 @@
 require('dotenv').config()
-const { useConn, exec } = require('./connector')
+const { pool, queryDatabase } = require('./connector')
 
-var fs = require('fs')
+const fs = require('fs')
 const debug = require('debug')('.')
 
 function jsonToCsv(items) {
   const header = Object.keys(items[0])
 
-  const headerString = header.join(',')
+  const headerString = header.join(';')
 
   // handle null or undefined values here
   const replacer = (key, value) => value ?? ''
@@ -15,7 +15,7 @@ function jsonToCsv(items) {
   const rowItems = items.map((row) =>
     header
       .map((fieldName) => JSON.stringify(row[fieldName], replacer))
-      .join(',')
+      .join(';')
   )
 
   // join header and body, and break into separate lines
@@ -29,39 +29,51 @@ const DBNAME_FILTER_REGEX = new RegExp(process.env.DBNAME_FILTER_REGEX)
 async function startApp () {
   console.time('Execution time')
 
-  await useConn(async function (dbConn) {
+  try {
     debug('METAQUERY STARTS ****\n')
 
     let databases =
       process.env.DATABASE_LIST ? process.env.DATABASE_LIST.split(',') : []
 
     if (databases.length == 0) {
-      const results = await exec(dbConn, 'SHOW databases')
+      const [results] = await pool.query('SHOW databases')
 
       databases = results
         .map(result => result['Database'])
         .filter(dbName => DBNAME_FILTER_REGEX.test(dbName))
     }
 
+    const total = databases.length
+    let done = 0
+
+    // Run every tenant in parallel; the pool's connectionLimit (= CONCURRENCY)
+    // throttles how many execute at once. Progress is logged as each tenant
+    // settles (completion order, not list order, since they run concurrently).
+    const settled = await Promise.allSettled(
+      databases.map(database =>
+        queryDatabase(database, process.env.SQL_STATEMENT)
+          .then(
+            rows => {
+              const rowCount = rows?.length ?? 0
+              const progress = parseInt(++done / total * 100)
+              debug(`[${done}/${total} ${progress}%] ${database} -> ${rowCount} rows`)
+              return rows
+            },
+            error => {
+              const progress = parseInt(++done / total * 100)
+              debug(`[${done}/${total} ${progress}%] ${database} -> ERROR: ${error.message}`)
+              throw error
+            }
+          )
+      )
+    )
+
     const allMyResults = []
-    for ([index, database] of databases.entries()) {
-      debug(`USING ${database} ...`)
-
-      try {
-        await exec(dbConn, `USE ${database}`)
-
-        const myresult =
-          await exec(dbConn, process.env.SQL_STATEMENT)
-        const jsonResult = JSON.parse(JSON.stringify(myresult))
-
-        if (myresult.length > 0) allMyResults.push(jsonResult)
-      } catch (error) {
-        debug(`Error executing query on ${database}: ${error.message}`)
+    settled.forEach((outcome) => {
+      if (outcome.status === 'fulfilled' && outcome.value?.length > 0) {
+        allMyResults.push(outcome.value)
       }
-
-      const progress = parseInt((index + 1) / databases.length * 100)
-      debug(`progress ----------------------------> ${progress}%`)
-    }
+    })
 
     debug('*** METAQUERY FINISHES\n')
 
@@ -72,12 +84,12 @@ async function startApp () {
     } else {
       const csv = jsonToCsv(allMyResults.flat(1))
 
-      fs.appendFile('results.csv', csv, function (err) {
-        if (err) throw err
-        console.log('RESULTS: results.csv created!\n')
-      })
+      fs.writeFileSync('results.csv', csv)
+      console.log('RESULTS: results.csv created!\n')
     }
-  })
+  } finally {
+    await pool.end()
+  }
 
   console.timeEnd('Execution time')
 }
