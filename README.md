@@ -1,5 +1,5 @@
 # Quick Metaquery
-Query through all your databases/schemas.
+Query through all your databases/schemas. Runs the query against every database concurrently, throttled by a connection pool, and writes the combined results to `results.csv`.
 
 ## Getting Started
 
@@ -16,6 +16,7 @@ Follow these steps to set up and run the project:
    - Database configuration: Provide the database access credentials.
    - Database list filters: Specify which databases should be queried.
    - SQL statement to execute: Define the SQL statement to be executed on each database.
+   - Concurrency (optional): Set `CONCURRENCY` to cap how many databases are queried in parallel (connection pool size). Defaults to 5.
 
 3. **Install dependencies**
    Run the following command to install the required dependencies:
@@ -38,11 +39,12 @@ Follow these steps to set up and run the project:
 ## Notes
 
 - Ensure your database credentials and configurations are correct in the `.env` file.
-- The `results.csv` file will be created in the root directory of the project.
+- The `results.csv` file will be created (overwritten) in the root directory of the project. It is semicolon-delimited.
+- Set `DEBUG=*` (or `DEBUG=.`) to see per-database progress logs during execution.
 
 ## Requirements
 
-- Node.js (v20 or higher)
+- Node.js (v24 or higher)
 
 ## License
 
