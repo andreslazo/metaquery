@@ -1,6 +1,6 @@
 {
   "name": "metaquery",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "mysql metaquery",
   "main": "index.js",
   "scripts": {
@@ -23,7 +23,7 @@
   "homepage": "https://github.com/geoom/metaquery#readme",
   "dependencies": {
     "dotenv": "^16.4.5",
-    "mysql": "^2.18.1"
+    "mysql2": "^3.11.0"
   },
   "devDependencies": {
     "debug": "^4.3.4"
